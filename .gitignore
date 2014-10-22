@@ -1,0 +1,10 @@
+out/*
+.idea/*
+.metadata/
+marioai.iml
+nbproject/
+/nbproject/private/
+/build/
+build.xml
+manifest.mf
+.svn/*
