@@ -117,8 +117,8 @@ public class MainRun
     }
 
     public static double testConfig (TimingAgent controller, EvaluationOptions options, int seed, int levelDifficulty, boolean paused) {
-        //options.setLevelDifficulty(levelDifficulty);
-        options.setLevelDifficulty(5);
+        options.setLevelDifficulty(levelDifficulty);
+        //options.setLevelDifficulty(5);
         options.setPauseWorld(paused);
         StatisticalSummary ss = test (controller, options, seed);
         double averageTimeTaken = controller.averageTimeTaken();

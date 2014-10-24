@@ -75,6 +75,9 @@ public class TuringAgent extends BasicAIAgent implements Agent
         action[Mario.KEY_SPEED] = false;
         action[Mario.KEY_JUMP] = false;
 
+        // TODO: add firing, account for spiky enemies (9), go left sometimes, break more bricks
+        // TODO: STRETCH GOALS: fix gap detection
+
         // check if it's time to go right
         TryRight(observation);
 
@@ -126,10 +129,17 @@ public class TuringAgent extends BasicAIAgent implements Agent
             System.out.println("enemy behind us");
         }
 
+        // don't head towards a greater number of enemies
         if (EnemiesAhead(observation) <= EnemiesBehind(observation)) {
             shouldLeft = false;
         }
 
+        // if it's dangerous above and to the right
+        if (DangerAbove(observation) && DangerRight(observation)) {
+            shouldLeft = true;
+        }
+
+        // actually send Mario left
         if (shouldLeft) {
             action[Mario.KEY_RIGHT] = false;
             action[Mario.KEY_LEFT] = shouldLeft;
@@ -147,12 +157,14 @@ public class TuringAgent extends BasicAIAgent implements Agent
         boolean shouldJump = action[Mario.KEY_JUMP];
 
         // if there's something in the way to the right
-        if (right && (levelScene[M_POS][M_POS + 2] != TILE.NONE || levelScene[M_POS][M_POS + 1] != TILE.NONE)) {
+        if (right && (DangerRight(observation) || levelScene[M_POS][M_POS + 2] != TILE.NONE || levelScene[M_POS][M_POS + 1] != TILE.NONE)) {
+            System.out.print(levelScene[M_POS][M_POS + 2] + " and ");
+            System.out.println(levelScene[M_POS][M_POS + 1]);
             shouldJump = true;
         }
 
         // if there's something in the way to the left
-        else if (left && (levelScene[M_POS][M_POS - 2] != TILE.NONE || levelScene[M_POS][M_POS - 1] != TILE.NONE)) {
+        if (left && (levelScene[M_POS][M_POS - 2] != TILE.NONE || levelScene[M_POS][M_POS - 1] != TILE.NONE)) {
             shouldJump = true;
         }
 
@@ -162,7 +174,7 @@ public class TuringAgent extends BasicAIAgent implements Agent
         }
 
         // if we're under qbrick
-        if (IsUnder(levelScene, TILE.QBRICK)) {
+        if (IsDirectlyUnder(levelScene, TILE.QBRICK)) {
             shouldJump = true;
         }
 
@@ -231,6 +243,18 @@ public class TuringAgent extends BasicAIAgent implements Agent
      */
     private boolean IsUnder(byte[][] levelScene, int type) {
         for (int y = 0; y < M_POS - 1; y++) {
+            if (levelScene[y][M_POS] == type || levelScene[y][M_POS - 1] == type || levelScene[y][M_POS + 1] == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*
+        Mario is directly under something if it shares his x position
+     */
+    private boolean IsDirectlyUnder(byte[][] levelScene, int type) {
+        for (int y = 0; y < M_POS - 1; y++) {
             if (levelScene[y][M_POS] == type) {
                 return true;
             }
@@ -284,8 +308,35 @@ public class TuringAgent extends BasicAIAgent implements Agent
      */
     private boolean DangerAbove(Environment observation) {
         byte[][] enemies = observation.getEnemiesObservationZ(2);
-        if (IsUnder(enemies, 1)) {
-            return true;
+        return IsUnder(enemies, 1);
+    }
+
+    /*
+        Mario should keep his eyes front
+     */
+    private boolean DangerRight(Environment observation) {
+        byte[][] enemies = observation.getEnemiesObservationZ(2);
+        for (int y = M_POS - 3; y < M_POS + 3; y++) {
+            for (int x = M_POS + 1; x < M_POS + 3; x++) {
+                if (enemies[y][x] == 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /*
+        Mario should watch his back
+     */
+    private boolean DangerLeft(Environment observation) {
+        byte[][] enemies = observation.getEnemiesObservationZ(2);
+        for (int y = M_POS - 3; y < M_POS + 3; y++) {
+            for (int x = M_POS - 3; x < M_POS; x++) {
+                if (enemies[y][x] == 1) {
+                    return true;
+                }
+            }
         }
         return false;
     }
