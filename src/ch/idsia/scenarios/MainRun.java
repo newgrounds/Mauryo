@@ -1,6 +1,7 @@
 package ch.idsia.scenarios;
 
 import ch.idsia.ai.agents.ai.*;
+import ch.idsia.ai.agents.human.*;
 import ch.idsia.ai.agents.Agent;
 import ch.idsia.ai.agents.AgentsPool;
 //import ch.idsia.ai.agents.icegic.robin.AStarAgent;
@@ -64,7 +65,7 @@ public class MainRun
 //            AgentsPool.addAgent(new ForwardAgent());
 //            AgentsPool.addAgent(new ForwardJumpingAgent());
 //            AgentsPool.addAgent(new RandomAgent());
-////            AgentsPool.addAgent(new HumanKeyboardAgent());
+//            AgentsPool.addAgent(new HumanKeyboardAgent());
 //            AgentsPool.addAgent(new SimpleMLPAgent());
 //            AgentsPool.addAgent(new ScaredAgent());
 //            AgentsPool.addAgent(new Perez());
@@ -116,7 +117,8 @@ public class MainRun
     }
 
     public static double testConfig (TimingAgent controller, EvaluationOptions options, int seed, int levelDifficulty, boolean paused) {
-        options.setLevelDifficulty(levelDifficulty);
+        //options.setLevelDifficulty(levelDifficulty);
+        options.setLevelDifficulty(10);
         options.setPauseWorld(paused);
         StatisticalSummary ss = test (controller, options, seed);
         double averageTimeTaken = controller.averageTimeTaken();
