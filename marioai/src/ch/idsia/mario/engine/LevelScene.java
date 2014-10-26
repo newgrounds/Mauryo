@@ -240,7 +240,7 @@ public class LevelScene extends Scene implements SpriteContext
                     case(Sprite.KIND_SPIKY_WINGED):
                         return Sprite.KIND_SPIKY;
                 }
-                System.err.println("UNKOWN el = " + el);
+                //System.err.println("UNKOWN el = " + el);
                 return el;
             case(2):
                 switch(el)
@@ -263,7 +263,7 @@ public class LevelScene extends Scene implements SpriteContext
                     case(Sprite.KIND_ENEMY_FLOWER):
                         return 1;
                 }
-                System.err.println("Z2 UNKNOWNN el = " + el);
+                //System.err.println("Z2 UNKNOWNN el = " + el);
                 return 1;
         }
         return el; //TODO: Throw unknown ZLevel exception

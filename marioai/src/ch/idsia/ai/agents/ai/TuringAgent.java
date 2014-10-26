@@ -1,6 +1,7 @@
 package ch.idsia.ai.agents.ai;
 
 import ch.idsia.ai.agents.Agent;
+import ch.idsia.mario.engine.sprites.Sprite;
 import ch.idsia.mario.environments.Environment;
 import ch.idsia.mario.engine.sprites.Mario;
 import ch.idsia.mario.engine.sprites.Mario.MODE;
@@ -12,11 +13,6 @@ public class TuringAgent extends BasicAIAgent implements Agent
 {
     // Tile types
     static class TILE {
-        public static final int NONE = 0;
-        public static final int ENEMY = 2;
-        public static final int HARD_ENEMY = 9;
-
-        public static final int FLOWER_ENEMY = 12;
         public static final int FLOWER_PIPE = 20;
 
         public static final int HARD_TERRAIN = -10;
@@ -24,25 +20,28 @@ public class TuringAgent extends BasicAIAgent implements Agent
 
         public static final int BRICK = 16;
         public static final int QBRICK = 21;
-
-        public static final int FIRE_FLOWER = 15;
     }
 
     // count jump height
     private int trueJumpCounter = 0;
 
-    // time since last left
-    private int lastLeftTime = 0;
-    // left interval
-    private int leftInterval = 10;
+    // should Mario get the qbrick
+    private boolean targetBrick = false;
+    // position of the qbrick
+    private int[] brickPos = new int[] {0, 0};
 
-    // time since last jump
-    private int lastJumpTime = 0;
-    // jump interval
-    private int jumpInterval = 5;
+    // should Mario get the flower
+    private boolean targetFlower = false;
+    // position of the flower
+    private int[] flowerPos = new int[] {0, 0};
+    private int flowerJumpCounter = 0;
 
     // Mario's current mode
     private MODE currentMode = MODE.MODE_FIRE;
+    private boolean fired = false;
+
+    private static final int SHOT_COOL_DOWN = 20;
+    private int coolDown = SHOT_COOL_DOWN;
 
     // level width and height
     private static final int SIZE = 22;
@@ -61,13 +60,8 @@ public class TuringAgent extends BasicAIAgent implements Agent
 
     public boolean[] getAction(Environment observation)
     {
-        /*float[] marioPos = agentObservation.getMarioFloatPos();
-        float[] enemiesPos = agentObservation.getEnemiesFloatPos();*/
-
         // set Mario's mode
         SetMode(observation);
-
-        byte[][] levelScene = observation.getCompleteObservation();
 
         // default movement values
         action[Mario.KEY_RIGHT] = true;
@@ -75,8 +69,7 @@ public class TuringAgent extends BasicAIAgent implements Agent
         action[Mario.KEY_SPEED] = false;
         action[Mario.KEY_JUMP] = false;
 
-        // TODO: add firing, account for spiky enemies (9), go left sometimes, break more bricks
-        // TODO: STRETCH GOALS: fix gap detection
+        // TODO: account for spiky enemies (9), fix gap detection, fix fire flower targeting
 
         // check if it's time to go right
         TryRight(observation);
@@ -84,8 +77,19 @@ public class TuringAgent extends BasicAIAgent implements Agent
         // check if it's time to go left
         TryLeft(observation);
 
+        // check if we should target the qbricks
+        TryQBrick(observation);
+
         // check if it's time to jump at something
         TryJump(observation);
+
+        // check if we should target the fire flower
+        /*if (currentMode != MODE.MODE_FIRE) {
+            TryFireFlower(observation);
+        }*/
+
+        // check if we should run or shoot
+        TryFire(observation);
 
         return action;
     }
@@ -100,14 +104,10 @@ public class TuringAgent extends BasicAIAgent implements Agent
         boolean shouldRight = action[Mario.KEY_RIGHT];
 
         // if there's a flower enemy ahead
-        if (IsBehind(levelScene, TILE.FLOWER_ENEMY)) {
-            /*if (currentMode == MODE.MODE_FIRE) {
-                action[Mario.KEY_SPEED] = false;
-                action[Mario.KEY_SPEED] = true;
-            }*/
+        if (IsBehind(levelScene, Sprite.KIND_ENEMY_FLOWER)) {
             // if there's a dangerous flower about
             if (FlowerDanger(levelScene)) {
-                System.out.println("mario will wait");
+                //System.out.println("mario will wait");
                 shouldRight = false;
             }
         }
@@ -124,13 +124,15 @@ public class TuringAgent extends BasicAIAgent implements Agent
         boolean shouldLeft = action[Mario.KEY_LEFT];
 
         // if we're ahead of an enemy
-        if (IsAhead(levelScene, TILE.ENEMY)) {
+        if (IsAhead(levelScene, Sprite.KIND_GOOMBA)) {
             shouldLeft = true;
-            System.out.println("enemy behind us");
+            //System.out.println("enemy behind us");
         }
 
         // don't head towards a greater number of enemies
-        if (EnemiesAhead(observation) <= EnemiesBehind(observation)) {
+        int ahead = EnemiesAhead(observation);
+        int behind = EnemiesBehind(observation);
+        if (ahead <= behind && behind >= 3) {
             shouldLeft = false;
         }
 
@@ -147,6 +149,36 @@ public class TuringAgent extends BasicAIAgent implements Agent
     }
 
     /*
+        Check if it's time to speed or fire
+     */
+    private void TryFire(Environment observation) {
+        byte[][] enemies = observation.getEnemiesObservationZ(1);
+        int[] easyEnemyPos = GetPos(enemies, Sprite.KIND_GOOMBA);
+        int[] hardEnemyPos = GetPos(enemies, Sprite.KIND_SPIKY);
+        boolean enemy = false;
+
+        if (easyEnemyPos[0] != Sprite.KIND_NONE || easyEnemyPos[1] != Sprite.KIND_NONE
+                || hardEnemyPos[0] != Sprite.KIND_NONE || hardEnemyPos[1] != Sprite.KIND_NONE) {
+            enemy = true;
+        }
+
+        boolean trigger = Math.floor(Math.random() * 5) == 0;
+
+        if (trigger && enemy && !fired && currentMode == MODE.MODE_FIRE) {
+            action[Mario.KEY_SPEED] = true;
+            fired = true;
+            //coolDown--;
+        }
+        else if (trigger && !enemy && currentMode == MODE.MODE_LARGE) {
+            action[Mario.KEY_SPEED] = true;
+            //coolDown = SHOT_COOL_DOWN;
+        } else {
+            fired = false;
+            //coolDown = SHOT_COOL_DOWN;
+        }
+    }
+
+    /*
         Check if it's time to jump
      */
     private void TryJump(Environment observation) {
@@ -157,14 +189,14 @@ public class TuringAgent extends BasicAIAgent implements Agent
         boolean shouldJump = action[Mario.KEY_JUMP];
 
         // if there's something in the way to the right
-        if (right && (DangerRight(observation) || levelScene[M_POS][M_POS + 2] != TILE.NONE || levelScene[M_POS][M_POS + 1] != TILE.NONE)) {
-            System.out.print(levelScene[M_POS][M_POS + 2] + " and ");
-            System.out.println(levelScene[M_POS][M_POS + 1]);
+        if (right && (DangerRight(observation) || levelScene[M_POS][M_POS + 2] != Sprite.KIND_NONE || levelScene[M_POS][M_POS + 1] != Sprite.KIND_NONE)) {
+            //System.out.print(levelScene[M_POS][M_POS + 2] + " and ");
+            //System.out.println(levelScene[M_POS][M_POS + 1]);
             shouldJump = true;
         }
 
         // if there's something in the way to the left
-        if (left && (levelScene[M_POS][M_POS - 2] != TILE.NONE || levelScene[M_POS][M_POS - 1] != TILE.NONE)) {
+        if (left && (levelScene[M_POS][M_POS - 2] != Sprite.KIND_NONE || levelScene[M_POS][M_POS - 1] != Sprite.KIND_NONE)) {
             shouldJump = true;
         }
 
@@ -178,8 +210,23 @@ public class TuringAgent extends BasicAIAgent implements Agent
             shouldJump = true;
         }
 
-        // if we're under brick, or under soft terrain
-        // based on chance
+        // if we're under soft terrain
+        // 33% chance
+        if (IsUnder(levelScene, TILE.SOFT_TERRAIN)
+                && Math.floor(Math.random() * 3) == 0) {
+            shouldJump = true;
+        }
+
+        // try to destroy all bricks
+        if (IsUnder(levelScene, TILE.BRICK)) {
+            shouldJump = true;
+        }
+
+        // random jumps
+        // 3% chance
+        if (IsUnder(levelScene, Sprite.KIND_NONE) && Math.floor(Math.random() * 33) == 0) {
+            shouldJump = true;
+        }
 
         // if there's danger above
         if (DangerAbove(observation)) {
@@ -198,6 +245,146 @@ public class TuringAgent extends BasicAIAgent implements Agent
                 action[Mario.KEY_JUMP] = true;
             }
             ++trueJumpCounter;
+        }
+    }
+
+    /*
+        Try to get qbrick
+     */
+    private void TryQBrick(Environment observation) {
+        // handle the appearance of the qbrick
+        int[] newBrickPos = GetPos(observation.getLevelSceneObservation(), TILE.QBRICK);
+
+        // if there's no qbrick
+        if (newBrickPos[0] == Sprite.KIND_NONE && newBrickPos[1] == Sprite.KIND_NONE) {
+            brickPos = newBrickPos;
+            targetBrick = false;
+            return;
+        }
+
+        // 80% chance of targeting qbrick when it first appears
+        if (brickPos[0] == Sprite.KIND_NONE && brickPos[1] == Sprite.KIND_NONE) {
+            //targetBrick = Math.floor(Math.random() * 1.2) == 0;
+            targetBrick = true;
+            brickPos = newBrickPos;
+        }
+        // otherwise, update stored position of qbrick
+        else {
+            brickPos = newBrickPos;
+        }
+
+        // target the qbrick
+        if (targetBrick) {
+            // if it's under Mario
+            if (brickPos[0] > M_POS) {
+                action[Mario.KEY_RIGHT] = true;
+                action[Mario.KEY_LEFT] = false;
+                System.out.println("qbrick under Mario");
+            }
+            // if it's over Mario
+            else if (brickPos[0] < M_POS && brickPos[1] == M_POS) {
+                if (observation.mayMarioJump()) {
+                    action[Mario.KEY_JUMP] = true;
+                }
+                System.out.println("qbrick over Mario");
+            }
+            // if it's on the same level
+            else {
+                // if it's to the left
+                if (brickPos[1] < M_POS){
+                    action[Mario.KEY_LEFT] = true;
+                    action[Mario.KEY_RIGHT] = false;
+                    action[Mario.KEY_JUMP] = false;
+                    System.out.println("qbrick to the left");
+                }
+                // if it's to the right
+                else if (brickPos[1] > M_POS) {
+                    action[Mario.KEY_LEFT] = false;
+                    action[Mario.KEY_RIGHT] = true;
+                    action[Mario.KEY_JUMP] = false;
+                    System.out.println("qbrick to the right");
+                }
+            }
+        }
+    }
+
+    /*
+        Try to get fire flower
+     */
+    private void TryFireFlower(Environment observation) {
+        // handle the appearance of the fire flower
+        int[] newFlowerPos = GetPos(observation.getEnemiesObservationZ(0), Sprite.KIND_FIRE_FLOWER);
+        int[] oldFlowerPos = flowerPos;
+
+        // if there's no fire flower
+        if (newFlowerPos[0] == Sprite.KIND_NONE && newFlowerPos[1] == Sprite.KIND_NONE) {
+            flowerPos = newFlowerPos;
+            targetFlower = false;
+            return;
+        }
+
+        // 80% chance of targeting fire flower when it first appears
+        if (flowerPos[0] == Sprite.KIND_NONE && flowerPos[1] == Sprite.KIND_NONE) {
+            //targetFlower = Math.floor(Math.random() * 1.2) == 0;
+            targetFlower = true;
+            flowerPos = newFlowerPos;
+        }
+        // otherwise, update stored position of fire flower
+        else {
+            flowerPos = newFlowerPos;
+        }
+
+        // target the fire flower
+        if (targetFlower) {
+            System.out.println("Fire flower y: " + flowerPos[0] + ", x: " + flowerPos[1]);
+
+            boolean xCloser = Math.abs(M_POS - flowerPos[1]) < Math.abs(M_POS - oldFlowerPos[1]);
+
+            byte[][] levelScene = observation.getLevelSceneObservation();
+
+            boolean left = flowerPos[1] < M_POS;
+            boolean right = flowerPos[1] > M_POS;
+            boolean jump = false;
+
+            // if Mario is jumping & can't make it onto something
+            if (!observation.isMarioOnGround() && !xCloser && Math.abs(oldFlowerPos[1] - newFlowerPos[1]) < 2) {
+                jump = true;
+                action[Mario.KEY_LEFT] = left;
+                action[Mario.KEY_RIGHT] = right;
+                System.out.println("haven't gotten closer");
+            }
+            // if Mario is under a brick or the flower, go right
+            if ((IsUnder(levelScene, TILE.BRICK) || IsUnder(levelScene, TILE.QBRICK)
+                    || IsUnder(levelScene, Sprite.KIND_FIRE_FLOWER) || IsCloseUnder(levelScene, TILE.HARD_TERRAIN))
+                    && observation.isMarioOnGround()) {
+                action[Mario.KEY_RIGHT] = true;
+                action[Mario.KEY_LEFT] = false;
+                action[Mario.KEY_SPEED] = false;
+                //jump = true;
+                System.out.println("brick or flower above mario");
+            }
+            // if it's not on the same y
+            else if (flowerPos[0] < M_POS) {
+                jump = true;
+                action[Mario.KEY_LEFT] = left;
+                action[Mario.KEY_RIGHT] = right;
+                System.out.println("fire flower is not on mario's level, x is " + flowerPos[1]);
+            } else {
+                action[Mario.KEY_LEFT] = left;
+                action[Mario.KEY_RIGHT] = right;
+                action[Mario.KEY_SPEED] = true;
+                jump = false;
+                System.out.println("else case");
+            }
+
+            // handle jumping for flower
+            if (jump && (observation.mayMarioJump() || flowerJumpCounter < 21)) {
+                action[Mario.KEY_JUMP] = true;
+                flowerJumpCounter++;
+            } else {
+                action[Mario.KEY_JUMP] = false;
+                flowerJumpCounter = 0;
+            }
         }
     }
 
@@ -240,9 +427,22 @@ public class TuringAgent extends BasicAIAgent implements Agent
 
     /*
         Mario is under something if it's within 1 of his x position
+        He's close if it's within 3 of his y
+     */
+    private boolean IsCloseUnder(byte[][] levelScene, int type) {
+        for (int y = M_POS - 3; y < M_POS; y++) {
+            if (levelScene[y][M_POS] == type || levelScene[y][M_POS - 1] == type || levelScene[y][M_POS + 1] == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*
+        Mario is under something if it's within 1 of his x position
      */
     private boolean IsUnder(byte[][] levelScene, int type) {
-        for (int y = 0; y < M_POS - 1; y++) {
+        for (int y = 0; y < M_POS; y++) {
             if (levelScene[y][M_POS] == type || levelScene[y][M_POS - 1] == type || levelScene[y][M_POS + 1] == type) {
                 return true;
             }
@@ -267,8 +467,7 @@ public class TuringAgent extends BasicAIAgent implements Agent
      */
     private boolean IsOver(byte[][] levelScene, int type) {
         for (int y = M_POS + 1; y < SIZE; y++) {
-            if (levelScene[y][M_POS] == type) {
-                System.out.println(y);
+            if (levelScene[y][M_POS] == type || levelScene[y][M_POS - 1] == type || levelScene[y][M_POS + 1] == type) {
                 return true;
             }
         }
@@ -349,7 +548,7 @@ public class TuringAgent extends BasicAIAgent implements Agent
         int flowerY = 0;
         for (int y = 0; y < SIZE; y++) {
             for (int x = M_POS + 1; x < M_POS + 3; x++) {
-                if (levelScene[y][x] == TILE.FLOWER_ENEMY) {
+                if (levelScene[y][x] == Sprite.KIND_ENEMY_FLOWER) {
                     flowerY = flowerY == 0 ? y : Math.min(y, flowerY);
                 }
                 if (levelScene[y][x] == TILE.FLOWER_PIPE) {
@@ -362,6 +561,26 @@ public class TuringAgent extends BasicAIAgent implements Agent
     }
 
     /*
+        Get the rightmost position of a given tile, or 0 x 0
+     */
+    private int[] GetPos(byte[][] levelScene, int type) {
+        int[] pos = new int[] {0, 0};
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                if (levelScene[y][x] == type) {
+                    if ((pos[1] == 0 && pos[0] == 0) || x > pos[1]) {
+                        pos[0] = y;
+                        pos[1] = x;
+                        //System.out.println("y: " + y + ", x: " + x);
+                        //return pos;
+                    }
+                }
+            }
+        }
+        return pos;
+    }
+
+    /*
         Mario can jump over this thing if it's not above him
      */
     private boolean IsJumpable(byte[][] levelScene, int type) {
@@ -371,27 +590,30 @@ public class TuringAgent extends BasicAIAgent implements Agent
                 if (levelScene[y][x] == type) {
                     if (y < M_POS) {
                         above = true;
-                        System.out.print("y = " + y);
+                        //System.out.print("y = " + y);
                     } else {
                         below = true;
-                        System.out.print("y = " + y);
+                        //System.out.print("y = " + y);
                     }
                 }
             }
         }
-        System.out.println("above: " + above + ", below: " + below);
+        //System.out.println("above: " + above + ", below: " + below);
         return !above && below;
     }
 
+    /*
+        Checks if Mario is in danger of falling into a gap
+    */
     private boolean DangerOfGap(byte[][] levelScene) {
         for (int x = M_POS - 2; x <= M_POS + 2; ++x) {
             boolean f = true;
             for (int y = M_POS + 1; y < SIZE; ++y) {
-                if  (levelScene[y][x] != TILE.NONE) {
+                if  (levelScene[y][x] != Sprite.KIND_NONE) {
                     f = false;
                 }
             }
-            if (f && levelScene[M_POS + 1][M_POS] != TILE.NONE) {
+            if (f && levelScene[M_POS + 1][M_POS] != Sprite.KIND_NONE) {
                 return true;
             }
         }
@@ -405,6 +627,9 @@ public class TuringAgent extends BasicAIAgent implements Agent
         currentMode = MODE.values()[observation.getMarioMode()];
     }
 
+    /*
+        Prints level scene for debugging purposes
+     */
     private void PrintLevelScene(byte[][] levelScene) {
         System.out.println("");
         for (int ly = 0; ly < SIZE; ly++) {
